@@ -27,3 +27,18 @@ Tambahkan header:
 - `DELETE /api/activities/:id`
 
 Endpoint `POST` dan `PUT` aktivitas menerima `multipart/form-data`.
+
+## Admin Only
+
+- `PATCH /api/activities/:id/verify`
+- `GET /api/users`
+- `POST /api/users`
+- `PUT /api/users/:id`
+- `PATCH /api/users/:id/reset-password`
+- `DELETE /api/users/:id`
+
+## Struktur Sheet
+
+- `tb_admin`: `id_admin`, `nama_admin`, `email`, `username`, `password`, `created_at`
+- `tb_user`: `id_user`, `id_admin`, `nim`, `nama_lengkap`, `email`, `username`, `password`, `prodi`, `created_at`
+- `log_aktivitas`: `id_log`, `id_user`, `judul_kegiatan`, `jenis_aktivitas`, `deskripsi`, `tanggal`, `status`, `bukti_file`, `created_at`

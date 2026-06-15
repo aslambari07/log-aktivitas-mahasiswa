@@ -11,13 +11,17 @@ import { ErrorState } from "../components/ui/ErrorState";
 import { Input } from "../components/ui/Input";
 import { Modal } from "../components/ui/Modal";
 import { Skeleton } from "../components/ui/Skeleton";
-import { createActivity, fetchActivities, removeActivity, updateActivity } from "../services/activityService";
-import type { Activity, ActivityFormValues } from "../types";
+import { useAuth } from "../hooks/useAuth";
+import { createActivity, fetchActivities, removeActivity, updateActivity, verifyActivity } from "../services/activityService";
+import { fetchUsers } from "../services/userService";
+import type { Activity, ActivityFormValues, ActivityStatus } from "../types";
 import { getErrorMessage } from "../utils/error";
-import { statusTone } from "../utils/format";
+import { statusLabel, statusTone } from "../utils/format";
 
 export function ActivitiesPage() {
   const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
   const [dateFrom, setDateFrom] = useState("");
@@ -33,6 +37,12 @@ export function ActivitiesPage() {
   const { data, isLoading, isError, refetch, error } = useQuery({
     queryKey: ["activities", params],
     queryFn: () => fetchActivities(params),
+  });
+
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: () => fetchUsers(),
+    enabled: isAdmin,
   });
 
   const createMutation = useMutation({
@@ -64,6 +74,15 @@ export function ActivitiesPage() {
       refreshAll();
     },
     onError: (error) => toast.error(getErrorMessage(error, "Gagal menghapus aktivitas.")),
+  });
+
+  const verifyMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: ActivityStatus }) => verifyActivity(id, status),
+    onSuccess: () => {
+      toast.success("Status aktivitas berhasil diperbarui.");
+      refreshAll();
+    },
+    onError: (error) => toast.error(getErrorMessage(error, "Gagal memverifikasi aktivitas.")),
   });
 
   function refreshAll() {
@@ -102,9 +121,9 @@ export function ActivitiesPage() {
           </div>
           <select className="rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3 text-sm text-textMain outline-none focus:border-primary focus:ring-4 focus:ring-primary/10 dark:border-white/10 dark:bg-white/5 dark:text-white" onChange={(event) => { setStatus(event.target.value); setPage(1); }} value={status}>
             <option value="">Semua status</option>
-            <option value="Pending">Pending</option>
-            <option value="Diproses">Diproses</option>
-            <option value="Selesai">Selesai</option>
+            <option value="pending">Pending</option>
+            <option value="approved">Disetujui</option>
+            <option value="rejected">Ditolak</option>
           </select>
           <Input onChange={(event) => { setDateFrom(event.target.value); setPage(1); }} type="date" value={dateFrom} />
           <Input onChange={(event) => { setDateTo(event.target.value); setPage(1); }} type="date" value={dateTo} />
@@ -134,6 +153,8 @@ export function ActivitiesPage() {
               setSelected(item);
               setFormOpen(true);
             }}
+            onVerify={(item, nextStatus) => verifyMutation.mutate({ id: item.id, status: nextStatus })}
+            isAdmin={isAdmin}
           />
           <div className="flex items-center justify-between rounded-[24px] border border-white/20 bg-white/70 px-5 py-4 text-sm dark:border-white/10 dark:bg-darkPanel/80">
             <span className="text-textSoft dark:text-darkSoft">
@@ -165,7 +186,7 @@ export function ActivitiesPage() {
       )}
 
       <Modal onClose={closeForm} open={formOpen} size="lg" title={selected ? "Edit Log Aktivitas" : "Tambah Log Aktivitas"}>
-        <ActivityForm initialData={selected} isSubmitting={createMutation.isPending || updateMutation.isPending} onCancel={closeForm} onSubmit={handleSubmit} />
+        <ActivityForm initialData={selected} isAdmin={isAdmin} isSubmitting={createMutation.isPending || updateMutation.isPending} onCancel={closeForm} onSubmit={handleSubmit} users={users} />
       </Modal>
 
       <Modal onClose={() => setDetailOpen(false)} open={detailOpen} title="Detail Aktivitas">
@@ -173,9 +194,10 @@ export function ActivitiesPage() {
           <div className="grid gap-4 text-sm">
             <DetailRow label="Nama Mahasiswa" value={selected.nama_mahasiswa} />
             <DetailRow label="NIM" value={selected.nim} />
+            <DetailRow label="Judul Kegiatan" value={selected.judul_kegiatan} />
             <DetailRow label="Jenis Aktivitas" value={selected.jenis_aktivitas} />
             <DetailRow label="Tanggal" value={selected.tanggalLabel} />
-            <DetailRow label="Status" value={<span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(selected.status)}`}>{selected.status}</span>} />
+            <DetailRow label="Status" value={<span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(selected.status)}`}>{statusLabel(selected.status)}</span>} />
             <DetailRow label="Deskripsi" value={selected.deskripsi} />
             <DetailRow
               label="Bukti File"
@@ -198,6 +220,8 @@ export function ActivitiesPage() {
           Aktivitas
           {" "}
           <strong className="text-textMain dark:text-white">{selected?.jenis_aktivitas}</strong>
+          {" "}
+          ({selected?.judul_kegiatan})
           {" "}
           milik
           {" "}

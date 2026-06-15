@@ -2,18 +2,18 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
-import type { Activity, ActivityFormValues } from "../../types";
+import type { Activity, ActivityFormValues, User } from "../../types";
 import { cn } from "../../utils/format";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 
 const schema = z.object({
-  nama_mahasiswa: z.string().min(1, "Nama Mahasiswa wajib diisi."),
-  nim: z.string().regex(/^\d+$/, "NIM hanya boleh angka."),
+  id_user: z.string().optional(),
+  judul_kegiatan: z.string().min(1, "Judul kegiatan wajib diisi."),
   jenis_aktivitas: z.string().min(1, "Jenis Aktivitas wajib dipilih."),
   deskripsi: z.string().min(1, "Deskripsi wajib diisi."),
   tanggal: z.string().min(1, "Tanggal wajib dipilih."),
-  status: z.enum(["Pending", "Diproses", "Selesai"]),
+  status: z.enum(["pending", "approved", "rejected"]),
   existingBuktiFile: z.string().optional(),
   bukti_file: z.any().optional(),
 });
@@ -23,11 +23,15 @@ export function ActivityForm({
   isSubmitting,
   onSubmit,
   onCancel,
+  users = [],
+  isAdmin = false,
 }: {
   initialData?: Activity | null;
   isSubmitting: boolean;
   onSubmit: (values: ActivityFormValues) => Promise<void>;
   onCancel: () => void;
+  users?: User[];
+  isAdmin?: boolean;
 }) {
   const {
     register,
@@ -37,12 +41,12 @@ export function ActivityForm({
   } = useForm<ActivityFormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      nama_mahasiswa: initialData?.nama_mahasiswa || "",
-      nim: initialData?.nim || "",
+      id_user: initialData?.id_user || "",
+      judul_kegiatan: initialData?.judul_kegiatan || "",
       jenis_aktivitas: initialData?.jenis_aktivitas || "",
       deskripsi: initialData?.deskripsi || "",
       tanggal: initialData?.tanggal || "",
-      status: initialData?.status || "Pending",
+      status: initialData?.status || "pending",
       existingBuktiFile: initialData?.bukti_file || "",
     },
   });
@@ -54,11 +58,20 @@ export function ActivityForm({
   return (
     <form className="grid gap-5" onSubmit={handleSubmit(onSubmit)}>
       <div className="grid gap-5 md:grid-cols-2">
-        <Field error={errors.nama_mahasiswa?.message} label="Nama Mahasiswa">
-          <Input placeholder="Masukkan nama lengkap" {...register("nama_mahasiswa")} />
-        </Field>
-        <Field error={errors.nim?.message} label="NIM">
-          <Input placeholder="Nomor induk mahasiswa" {...register("nim")} />
+        {isAdmin ? (
+          <Field error={errors.id_user?.message} label="Mahasiswa">
+            <select className="w-full rounded-2xl border border-slate-200/80 bg-white/70 px-4 py-3 text-sm text-textMain outline-none transition focus:border-primary focus:ring-4 focus:ring-primary/10 dark:border-white/10 dark:bg-white/5 dark:text-white" {...register("id_user")}>
+              <option value="">Pilih mahasiswa</option>
+              {users.map((user) => (
+                <option key={user.id_user} value={user.id_user}>
+                  {user.nama_lengkap || user.name} - {user.nim}
+                </option>
+              ))}
+            </select>
+          </Field>
+        ) : null}
+        <Field error={errors.judul_kegiatan?.message} label="Judul Kegiatan">
+          <Input placeholder="Contoh: Seminar teknologi kampus" {...register("judul_kegiatan")} />
         </Field>
       </div>
       <div className="grid gap-5 md:grid-cols-2">
@@ -94,18 +107,22 @@ export function ActivityForm({
         </Field>
         <Field error={errors.status?.message} label="Status">
           <div className="grid grid-cols-3 gap-2">
-            {["Pending", "Diproses", "Selesai"].map((status) => (
+            {[
+              { value: "pending", label: "Pending" },
+              { value: "approved", label: "Disetujui" },
+              { value: "rejected", label: "Ditolak" },
+            ].map((status) => (
               <label
                 className={cn(
                   "cursor-pointer rounded-2xl border px-3 py-3 text-center text-sm font-medium transition",
-                  selectedStatus === status
+                  selectedStatus === status.value
                     ? "border-primary bg-gradient-to-r from-primary/15 to-secondary/15 text-primary shadow-sm dark:border-primary dark:text-white"
                     : "border-slate-200/80 bg-white/70 text-textMain hover:border-primary/40 dark:border-white/10 dark:bg-white/5 dark:text-white"
                 )}
-                key={status}
+                key={status.value}
               >
-                <input className="sr-only" type="radio" value={status} {...register("status")} />
-                {status}
+                <input className="sr-only" type="radio" value={status.value} {...register("status")} />
+                {status.label}
               </label>
             ))}
           </div>

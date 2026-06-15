@@ -34,7 +34,7 @@ export function LoginPage() {
         <section className="hidden bg-[radial-gradient(circle_at_top_left,rgba(255,255,255,0.18),transparent_30%),linear-gradient(135deg,#2563eb,#7c3aed)] p-10 text-white lg:flex lg:flex-col lg:justify-between">
           <div>
             <div className="mb-4 inline-flex rounded-full bg-white/15 px-4 py-2 text-xs uppercase tracking-[0.28em]">Google Stitch to Production</div>
-            <h1 className="max-w-md text-4xl font-black leading-tight">Log Aktivitas Mahasiswa yang modern, rapi, dan realtime.</h1>
+            <h1 className="max-w-md text-4xl font-black leading-tight">Log Aktivitas Mahasiswa realtime.</h1>
           </div>
           <p className="max-w-md text-sm text-white/80">
             Dashboard akademik dengan visual glassmorphism, kontrol aktivitas harian, statistik realtime, dan integrasi Google Sheets.

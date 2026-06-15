@@ -1,18 +1,22 @@
 import { Eye, Pencil, Trash2 } from "lucide-react";
 
-import type { Activity } from "../types";
-import { initials, statusTone } from "../utils/format";
+import type { Activity, ActivityStatus } from "../types";
+import { initials, statusLabel, statusTone } from "../utils/format";
 
 export function ActivityTable({
   items,
   onDetail,
   onEdit,
   onDelete,
+  onVerify,
+  isAdmin = false,
 }: {
   items: Activity[];
   onDetail: (item: Activity) => void;
   onEdit: (item: Activity) => void;
   onDelete: (item: Activity) => void;
+  onVerify?: (item: Activity, status: ActivityStatus) => void;
+  isAdmin?: boolean;
 }) {
   return (
     <div className="overflow-hidden rounded-[28px] border border-white/20 bg-white/70 shadow-glass backdrop-blur-xl2 dark:border-white/10 dark:bg-darkPanel/80">
@@ -22,7 +26,7 @@ export function ActivityTable({
             <tr className="text-left text-xs uppercase tracking-[0.22em] text-textSoft dark:text-darkSoft">
               <th className="px-6 py-4">Nama Mahasiswa</th>
               <th className="px-6 py-4">NIM</th>
-              <th className="px-6 py-4">Jenis Aktivitas</th>
+              <th className="px-6 py-4">Kegiatan</th>
               <th className="px-6 py-4">Tanggal</th>
               <th className="px-6 py-4">Status</th>
               <th className="px-6 py-4 text-right">Aksi</th>
@@ -43,13 +47,22 @@ export function ActivityTable({
                   </div>
                 </td>
                 <td className="px-6 py-4 text-sm text-textSoft dark:text-darkSoft">{item.nim}</td>
-                <td className="px-6 py-4 text-sm text-textMain dark:text-white">{item.jenis_aktivitas}</td>
+                <td className="px-6 py-4 text-sm text-textMain dark:text-white">
+                  <div className="font-medium">{item.judul_kegiatan}</div>
+                  <div className="text-xs text-textSoft dark:text-darkSoft">{item.jenis_aktivitas}</div>
+                </td>
                 <td className="px-6 py-4 text-sm text-textSoft dark:text-darkSoft">{item.tanggalLabel}</td>
                 <td className="px-6 py-4">
-                  <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{item.status}</span>
+                  <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold ${statusTone(item.status)}`}>{statusLabel(item.status)}</span>
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex justify-end gap-2">
+                    {isAdmin && item.status === "pending" ? (
+                      <>
+                        <TextButton label="Setujui" onClick={() => onVerify?.(item, "approved")} />
+                        <TextButton label="Tolak" onClick={() => onVerify?.(item, "rejected")} />
+                      </>
+                    ) : null}
                     <IconButton label="Detail" onClick={() => onDetail(item)}><Eye size={16} /></IconButton>
                     <IconButton label="Edit" onClick={() => onEdit(item)}><Pencil size={16} /></IconButton>
                     <IconButton label="Hapus" onClick={() => onDelete(item)}><Trash2 size={16} /></IconButton>
@@ -61,6 +74,14 @@ export function ActivityTable({
         </table>
       </div>
     </div>
+  );
+}
+
+function TextButton({ label, onClick }: { label: string; onClick: () => void }) {
+  return (
+    <button className="rounded-xl px-3 py-2 text-xs font-semibold text-primary transition hover:bg-primary/10 dark:text-white" onClick={onClick} type="button">
+      {label}
+    </button>
   );
 }
 

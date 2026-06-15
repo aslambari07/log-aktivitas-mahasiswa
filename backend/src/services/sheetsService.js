@@ -7,7 +7,21 @@ import { env, isAppsScriptConfigured, isGoogleSheetsConfigured } from "../config
 import { getSheetsClient } from "../config/google.js";
 import { appsScriptGet, appsScriptPost } from "./appsScriptService.js";
 import { HttpError } from "../utils/httpError.js";
-import { getStatusOptions, mapActivityToRow, mapRowToActivity, SHEET_HEADERS } from "../utils/sheets.js";
+import {
+  ACTIVITY_HEADERS,
+  ADMIN_HEADERS,
+  SHEET_NAMES,
+  USER_HEADERS,
+  getStatusOptions,
+  mapActivityToRow,
+  mapAdminToRow,
+  mapRowToActivity,
+  mapRowToAdmin,
+  mapRowToUser,
+  mapUserToRow,
+  publicAdmin,
+  publicUser,
+} from "../utils/sheets.js";
 
 function ensureDataSourceConfig() {
   if (isAppsScriptConfigured || isGoogleSheetsConfigured) {
@@ -20,16 +34,45 @@ function ensureDataSourceConfig() {
   );
 }
 
-async function ensureHeaderRow() {
+async function getSheetMetadata(sheetName) {
   const sheets = getSheetsClient();
-  const range = `${env.sheetName}!A1:I1`;
+  const metadata = await sheets.spreadsheets.get({
+    spreadsheetId: env.spreadsheetId,
+  });
+
+  return metadata.data.sheets?.find((item) => item.properties?.title === sheetName) || null;
+}
+
+async function ensureSheet(sheetName, headers) {
+  const sheets = getSheetsClient();
+  let sheet = await getSheetMetadata(sheetName);
+
+  if (!sheet) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: env.spreadsheetId,
+      requestBody: {
+        requests: [
+          {
+            addSheet: {
+              properties: {
+                title: sheetName,
+                gridProperties: { rowCount: 1000, columnCount: headers.length },
+              },
+            },
+          },
+        ],
+      },
+    });
+    sheet = await getSheetMetadata(sheetName);
+  }
+
+  const range = `${sheetName}!A1:${columnLetter(headers.length)}1`;
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: env.spreadsheetId,
     range,
   });
-
   const current = response.data.values?.[0] || [];
-  const isValid = SHEET_HEADERS.every((header, index) => current[index] === header);
+  const isValid = headers.every((header, index) => current[index] === header);
 
   if (!isValid) {
     await sheets.spreadsheets.values.update({
@@ -37,49 +80,262 @@ async function ensureHeaderRow() {
       range,
       valueInputOption: "RAW",
       requestBody: {
-        values: [SHEET_HEADERS],
+        values: [headers],
       },
     });
   }
+
+  return sheet;
 }
 
-async function getAllRows() {
+async function getRows(sheetName, headers, mapper) {
   ensureDataSourceConfig();
 
   if (isAppsScriptConfigured) {
-    const response = await appsScriptGet("list");
+    const response = await appsScriptGet("listRows", { sheetName });
     const rows = Array.isArray(response.data) ? response.data : [];
-    return rows.map(mapRowToActivity);
+    return rows.map(mapper);
   }
 
-  await ensureHeaderRow();
-
+  await ensureSheet(sheetName, headers);
   const sheets = getSheetsClient();
   const response = await sheets.spreadsheets.values.get({
     spreadsheetId: env.spreadsheetId,
-    range: `${env.sheetName}!A2:I`,
+    range: `${sheetName}!A2:${columnLetter(headers.length)}`,
   });
 
-  const rows = response.data.values || [];
-  return rows.map(mapRowToActivity);
+  return (response.data.values || []).map(mapper);
 }
 
-async function findRowById(id) {
-  const rows = await getAllRows();
-  const index = rows.findIndex((item) => item.id === id);
+async function appendRow(sheetName, headers, values) {
+  if (isAppsScriptConfigured) {
+    const response = await appsScriptPost("appendRow", { sheetName, values });
+    return response.data;
+  }
+
+  const sheets = getSheetsClient();
+  await ensureSheet(sheetName, headers);
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: env.spreadsheetId,
+    range: `${sheetName}!A:${columnLetter(headers.length)}`,
+    valueInputOption: "RAW",
+    insertDataOption: "INSERT_ROWS",
+    requestBody: { values: [values] },
+  });
+
+  return values;
+}
+
+async function updateRow(sheetName, headers, rowNumber, values) {
+  if (isAppsScriptConfigured) {
+    const response = await appsScriptPost("updateRow", { sheetName, rowNumber, values });
+    return response.data;
+  }
+
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: env.spreadsheetId,
+    range: `${sheetName}!A${rowNumber}:${columnLetter(headers.length)}${rowNumber}`,
+    valueInputOption: "RAW",
+    requestBody: { values: [values] },
+  });
+
+  return values;
+}
+
+async function deleteRow(sheetName, rowNumber) {
+  if (isAppsScriptConfigured) {
+    await appsScriptPost("deleteRow", { sheetName, rowNumber });
+    return;
+  }
+
+  const sheet = await getSheetMetadata(sheetName);
+  const sheetId = sheet?.properties?.sheetId;
+
+  if (sheetId == null) {
+    throw new HttpError(500, `Sheet ${sheetName} tidak ditemukan.`);
+  }
+
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: env.spreadsheetId,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId,
+              dimension: "ROWS",
+              startIndex: rowNumber - 1,
+              endIndex: rowNumber,
+            },
+          },
+        },
+      ],
+    },
+  });
+}
+
+async function findRowById(sheetName, headers, rows, key, id) {
+  const index = rows.findIndex((item) => String(item[key]) === String(id));
 
   if (index === -1) {
-    throw new HttpError(404, "Data aktivitas tidak ditemukan.");
+    return null;
   }
 
   return {
-    activity: rows[index],
+    item: rows[index],
     rowNumber: index + 2,
-    rows,
   };
 }
 
-function filterActivities(rows, query) {
+export async function listAdmins() {
+  return getRows(SHEET_NAMES.admin, ADMIN_HEADERS, mapRowToAdmin);
+}
+
+export async function listUsers() {
+  return getRows(SHEET_NAMES.user, USER_HEADERS, mapRowToUser);
+}
+
+export async function findAccountByCredentials(username, password) {
+  const admins = await listAdmins();
+  const admin = admins.find(
+    (item) => item.username === username && item.password === password
+  );
+
+  if (admin) {
+    return publicAdmin(admin);
+  }
+
+  const users = await listUsers();
+  const user = users.find((item) => item.username === username && item.password === password);
+
+  if (user) {
+    return publicUser(user);
+  }
+
+  return null;
+}
+
+export async function listPublicUsers(query = {}) {
+  const users = await listUsers();
+  const search = (query.search || "").trim().toLowerCase();
+
+  return users
+    .filter((user) => {
+      const searchable = [user.nim, user.nama_lengkap, user.email, user.username, user.prodi]
+        .join(" ")
+        .toLowerCase();
+      return !search || searchable.includes(search);
+    })
+    .map(publicUser)
+    .sort((a, b) => a.nama_lengkap.localeCompare(b.nama_lengkap));
+}
+
+export async function createUser(payload, adminId) {
+  const users = await listUsers();
+  const duplicate = users.find(
+    (user) =>
+      user.username === payload.username ||
+      user.email === payload.email ||
+      user.nim === payload.nim
+  );
+
+  if (duplicate) {
+    throw new HttpError(409, "NIM, email, atau username sudah digunakan.");
+  }
+
+  const now = dayjs().toISOString();
+  const user = {
+    id_user: uuidv4(),
+    id_admin: adminId,
+    nim: payload.nim,
+    nama_lengkap: payload.nama_lengkap,
+    email: payload.email,
+    username: payload.username,
+    password: payload.password,
+    prodi: payload.prodi,
+    created_at: now,
+  };
+
+  await appendRow(SHEET_NAMES.user, USER_HEADERS, mapUserToRow(user));
+  return publicUser(user);
+}
+
+export async function updateUser(id, payload) {
+  const users = await listUsers();
+  const found = await findRowById(SHEET_NAMES.user, USER_HEADERS, users, "id_user", id);
+
+  if (!found) {
+    throw new HttpError(404, "Data user tidak ditemukan.");
+  }
+
+  const duplicate = users.find(
+    (user) =>
+      user.id_user !== id &&
+      (user.username === payload.username || user.email === payload.email || user.nim === payload.nim)
+  );
+
+  if (duplicate) {
+    throw new HttpError(409, "NIM, email, atau username sudah digunakan.");
+  }
+
+  const updated = {
+    ...found.item,
+    nim: payload.nim,
+    nama_lengkap: payload.nama_lengkap,
+    email: payload.email,
+    username: payload.username,
+    prodi: payload.prodi,
+  };
+
+  await updateRow(SHEET_NAMES.user, USER_HEADERS, found.rowNumber, mapUserToRow(updated));
+  return publicUser(updated);
+}
+
+export async function resetUserPassword(id, password) {
+  const users = await listUsers();
+  const found = await findRowById(SHEET_NAMES.user, USER_HEADERS, users, "id_user", id);
+
+  if (!found) {
+    throw new HttpError(404, "Data user tidak ditemukan.");
+  }
+
+  const updated = { ...found.item, password };
+  await updateRow(SHEET_NAMES.user, USER_HEADERS, found.rowNumber, mapUserToRow(updated));
+  return { id_user: id };
+}
+
+export async function deleteUser(id) {
+  const users = await listUsers();
+  const found = await findRowById(SHEET_NAMES.user, USER_HEADERS, users, "id_user", id);
+
+  if (!found) {
+    throw new HttpError(404, "Data user tidak ditemukan.");
+  }
+
+  const activities = await getAllActivityRows();
+  const hasActivities = activities.some((activity) => activity.id_user === id);
+
+  if (hasActivities) {
+    throw new HttpError(409, "User masih memiliki log aktivitas. Hapus atau pindahkan log terlebih dahulu.");
+  }
+
+  await deleteRow(SHEET_NAMES.user, found.rowNumber);
+  return { id_user: id };
+}
+
+async function getAllActivityRows() {
+  return getRows(SHEET_NAMES.activity, ACTIVITY_HEADERS, (row) => mapRowToActivity(row));
+}
+
+async function getJoinedActivities() {
+  const [activities, users] = await Promise.all([getAllActivityRows(), listUsers()]);
+  const usersById = new Map(users.map((user) => [user.id_user, user]));
+  return activities.map((activity) => mapRowToActivity(activity, usersById.get(activity.id_user)));
+}
+
+function filterActivities(rows, query, authUser) {
   const search = (query.search || "").trim().toLowerCase();
   const status = (query.status || "").trim();
   const dateFrom = query.dateFrom ? dayjs(query.dateFrom) : null;
@@ -87,7 +343,12 @@ function filterActivities(rows, query) {
 
   return rows
     .filter((item) => {
+      if (authUser?.role === "user" && item.id_user !== authUser.id_user) {
+        return false;
+      }
+
       const searchable = [
+        item.judul_kegiatan,
         item.nama_mahasiswa,
         item.nim,
         item.jenis_aktivitas,
@@ -129,151 +390,127 @@ function paginate(rows, page, limit) {
   };
 }
 
-export async function listActivities(query) {
-  const rows = await getAllRows();
-  const filtered = filterActivities(rows, query);
+export async function listActivities(query, authUser) {
+  const rows = await getJoinedActivities();
+  const filtered = filterActivities(rows, query, authUser);
   const page = Number(query.page || 1);
   const limit = Number(query.limit || 8);
 
   return paginate(filtered, page, limit);
 }
 
-export async function getActivityById(id) {
-  if (isAppsScriptConfigured) {
-    const response = await appsScriptGet("getById", { id });
-    if (!response.data) {
-      throw new HttpError(404, "Data aktivitas tidak ditemukan.");
-    }
+export async function getActivityById(id, authUser) {
+  const rows = await getJoinedActivities();
+  const activity = rows.find((item) => item.id_log === id);
 
-    return mapRowToActivity(response.data);
+  if (!activity) {
+    throw new HttpError(404, "Data aktivitas tidak ditemukan.");
   }
 
-  const { activity } = await findRowById(id);
+  assertActivityAccess(activity, authUser);
   return activity;
 }
 
-export async function createActivity(payload) {
+export async function createActivity(payload, authUser) {
   const now = dayjs().toISOString();
+  const userId = authUser.role === "admin" ? payload.id_user : authUser.id_user;
+  const user = (await listUsers()).find((item) => item.id_user === userId);
+
+  if (!user) {
+    throw new HttpError(404, "User pemilik aktivitas tidak ditemukan.");
+  }
+
   const activity = {
-    id: uuidv4(),
-    nama_mahasiswa: payload.nama_mahasiswa,
-    nim: payload.nim,
+    id_log: uuidv4(),
+    id_user: userId,
+    judul_kegiatan: payload.judul_kegiatan,
     jenis_aktivitas: payload.jenis_aktivitas,
     deskripsi: payload.deskripsi,
     tanggal: payload.tanggal,
-    status: payload.status,
+    status: authUser.role === "admin" ? payload.status : "pending",
     bukti_file: payload.bukti_file || "",
     created_at: now,
   };
 
-  if (isAppsScriptConfigured) {
-    const response = await appsScriptPost("create", { activity });
-    return mapRowToActivity(response.data || activity);
-  }
-
-  const sheets = getSheetsClient();
-  await ensureHeaderRow();
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: env.spreadsheetId,
-    range: `${env.sheetName}!A:I`,
-    valueInputOption: "RAW",
-    insertDataOption: "INSERT_ROWS",
-    requestBody: {
-      values: [mapActivityToRow(activity)],
-    },
-  });
-
-  return mapRowToActivity(mapActivityToRow(activity));
+  await appendRow(SHEET_NAMES.activity, ACTIVITY_HEADERS, mapActivityToRow(activity));
+  return mapRowToActivity(activity, user);
 }
 
-export async function updateActivity(id, payload) {
-  const { activity, rowNumber } = await findRowById(id);
-  const nextFile = payload.bukti_file ?? payload.existingBuktiFile ?? "";
+export async function updateActivity(id, payload, authUser) {
+  const rows = await getAllActivityRows();
+  const found = await findRowById(SHEET_NAMES.activity, ACTIVITY_HEADERS, rows, "id_log", id);
 
-  if (payload.bukti_file && activity.bukti_file && activity.bukti_file !== payload.bukti_file) {
-    await removeUploadedFile(activity.bukti_file);
+  if (!found) {
+    throw new HttpError(404, "Data aktivitas tidak ditemukan.");
+  }
+
+  assertActivityAccess(found.item, authUser);
+
+  const nextFile = payload.bukti_file ?? payload.existingBuktiFile ?? "";
+  if (payload.bukti_file && found.item.bukti_file && found.item.bukti_file !== payload.bukti_file) {
+    await removeUploadedFile(found.item.bukti_file);
+  }
+
+  const nextUserId = authUser.role === "admin" && payload.id_user ? payload.id_user : found.item.id_user;
+  const users = await listUsers();
+  const user = users.find((item) => item.id_user === nextUserId);
+
+  if (!user) {
+    throw new HttpError(404, "User pemilik aktivitas tidak ditemukan.");
   }
 
   const updated = {
-    ...activity,
-    nama_mahasiswa: payload.nama_mahasiswa,
-    nim: payload.nim,
+    ...found.item,
+    id_user: nextUserId,
+    judul_kegiatan: payload.judul_kegiatan,
     jenis_aktivitas: payload.jenis_aktivitas,
     deskripsi: payload.deskripsi,
     tanggal: payload.tanggal,
-    status: payload.status,
+    status: authUser.role === "admin" ? payload.status : found.item.status,
     bukti_file: nextFile,
   };
 
-  if (isAppsScriptConfigured) {
-    const response = await appsScriptPost("update", { id, activity: updated });
-    return mapRowToActivity(response.data || updated);
-  }
-
-  const sheets = getSheetsClient();
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: env.spreadsheetId,
-    range: `${env.sheetName}!A${rowNumber}:I${rowNumber}`,
-    valueInputOption: "RAW",
-    requestBody: {
-      values: [mapActivityToRow(updated)],
-    },
-  });
-
-  return mapRowToActivity(mapActivityToRow(updated));
+  await updateRow(SHEET_NAMES.activity, ACTIVITY_HEADERS, found.rowNumber, mapActivityToRow(updated));
+  return mapRowToActivity(updated, user);
 }
 
-export async function deleteActivity(id) {
-  const { activity, rowNumber } = await findRowById(id);
-
-  if (isAppsScriptConfigured) {
-    await appsScriptPost("delete", { id });
-
-    if (activity.bukti_file) {
-      await removeUploadedFile(activity.bukti_file);
-    }
-
-    return { id };
+export async function verifyActivity(id, status) {
+  if (!getStatusOptions().includes(status)) {
+    throw new HttpError(400, "Status tidak valid.");
   }
 
-  const sheets = getSheetsClient();
-  const metadata = await sheets.spreadsheets.get({
-    spreadsheetId: env.spreadsheetId,
-  });
+  const rows = await getAllActivityRows();
+  const found = await findRowById(SHEET_NAMES.activity, ACTIVITY_HEADERS, rows, "id_log", id);
 
-  const sheet = metadata.data.sheets?.find((item) => item.properties?.title === env.sheetName);
-
-  if (!sheet?.properties?.sheetId) {
-    throw new HttpError(500, `Sheet ${env.sheetName} tidak ditemukan.`);
+  if (!found) {
+    throw new HttpError(404, "Data aktivitas tidak ditemukan.");
   }
 
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId: env.spreadsheetId,
-    requestBody: {
-      requests: [
-        {
-          deleteDimension: {
-            range: {
-              sheetId: sheet.properties.sheetId,
-              dimension: "ROWS",
-              startIndex: rowNumber - 1,
-              endIndex: rowNumber,
-            },
-          },
-        },
-      ],
-    },
-  });
-
-  if (activity.bukti_file) {
-    await removeUploadedFile(activity.bukti_file);
-  }
-
-  return { id };
+  const updated = { ...found.item, status };
+  await updateRow(SHEET_NAMES.activity, ACTIVITY_HEADERS, found.rowNumber, mapActivityToRow(updated));
+  return mapRowToActivity(updated, (await listUsers()).find((user) => user.id_user === updated.id_user));
 }
 
-export async function getSummary() {
-  const rows = await getAllRows();
+export async function deleteActivity(id, authUser) {
+  const rows = await getAllActivityRows();
+  const found = await findRowById(SHEET_NAMES.activity, ACTIVITY_HEADERS, rows, "id_log", id);
+
+  if (!found) {
+    throw new HttpError(404, "Data aktivitas tidak ditemukan.");
+  }
+
+  assertActivityAccess(found.item, authUser);
+  await deleteRow(SHEET_NAMES.activity, found.rowNumber);
+
+  if (found.item.bukti_file) {
+    await removeUploadedFile(found.item.bukti_file);
+  }
+
+  return { id: found.item.id_log };
+}
+
+export async function getSummary(authUser) {
+  const rows = filterActivities(await getJoinedActivities(), {}, authUser);
   const today = dayjs().format("YYYY-MM-DD");
   const groupedByDate = rows.reduce((acc, item) => {
     const dateKey = item.tanggal || "Tanpa tanggal";
@@ -288,15 +525,16 @@ export async function getSummary() {
 
   const groupedByMahasiswa = Object.values(
     rows.reduce((acc, item) => {
-      if (!acc[item.nim]) {
-        acc[item.nim] = {
+      const key = item.id_user || item.nim;
+      if (!acc[key]) {
+        acc[key] = {
           nim: item.nim,
           name: item.nama_mahasiswa,
           total: 0,
         };
       }
 
-      acc[item.nim].total += 1;
+      acc[key].total += 1;
       return acc;
     }, {})
   )
@@ -306,9 +544,9 @@ export async function getSummary() {
   return {
     stats: {
       totalAktivitas: rows.length,
-      mahasiswaAktif: new Set(rows.map((item) => item.nim).filter(Boolean)).size,
+      mahasiswaAktif: new Set(rows.map((item) => item.id_user).filter(Boolean)).size,
       aktivitasHariIni: rows.filter((item) => item.tanggal === today).length,
-      totalLaporan: rows.filter((item) => item.status === "Selesai").length,
+      totalLaporan: rows.filter((item) => item.status === "approved").length,
     },
     charts: {
       aktivitasPerTanggal: Object.entries(groupedByDate)
@@ -319,6 +557,25 @@ export async function getSummary() {
       aktivitasPerMahasiswa: groupedByMahasiswa,
     },
   };
+}
+
+function assertActivityAccess(activity, authUser) {
+  if (authUser?.role === "user" && activity.id_user !== authUser.id_user) {
+    throw new HttpError(403, "Anda tidak memiliki akses ke aktivitas ini.");
+  }
+}
+
+function columnLetter(columnNumber) {
+  let letter = "";
+  let number = columnNumber;
+
+  while (number > 0) {
+    const remainder = (number - 1) % 26;
+    letter = String.fromCharCode(65 + remainder) + letter;
+    number = Math.floor((number - 1) / 26);
+  }
+
+  return letter;
 }
 
 async function removeUploadedFile(filePath) {

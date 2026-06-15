@@ -8,6 +8,7 @@ const AppShell = lazy(() => import("./components/layout/AppShell").then((module)
 const ActivitiesPage = lazy(() => import("./pages/ActivitiesPage").then((module) => ({ default: module.ActivitiesPage })));
 const DashboardPage = lazy(() => import("./pages/DashboardPage").then((module) => ({ default: module.DashboardPage })));
 const LoginPage = lazy(() => import("./pages/LoginPage").then((module) => ({ default: module.LoginPage })));
+const UsersPage = lazy(() => import("./pages/UsersPage").then((module) => ({ default: module.UsersPage })));
 
 export default function App() {
   return (
@@ -18,6 +19,7 @@ export default function App() {
           <Route element={<AppShell />}>
             <Route element={<DashboardPage />} index />
             <Route element={<ActivitiesPage />} path="/aktivitas" />
+            <Route element={<UsersPage />} path="/users" />
           </Route>
         </Route>
         <Route element={<Navigate replace to="/" />} path="*" />

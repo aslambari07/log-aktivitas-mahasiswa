@@ -19,3 +19,11 @@ export function requireAuth(req, _res, next) {
     next(new HttpError(401, "Sesi login tidak valid atau sudah berakhir."));
   }
 }
+
+export function requireAdmin(req, _res, next) {
+  if (req.user?.role !== "admin") {
+    return next(new HttpError(403, "Akses hanya untuk admin."));
+  }
+
+  next();
+}

@@ -1,5 +1,5 @@
 import { http } from "../api/http";
-import type { Activity, ActivityFormValues, ActivityListResponse, SummaryResponse } from "../types";
+import type { Activity, ActivityFormValues, ActivityListResponse, ActivityStatus, SummaryResponse } from "../types";
 
 export async function fetchActivities(params: Record<string, string | number>) {
   const { data } = await http.get<ActivityListResponse>("/api/activities", { params });
@@ -13,8 +13,10 @@ export async function fetchSummary() {
 
 function toFormData(payload: ActivityFormValues) {
   const formData = new FormData();
-  formData.append("nama_mahasiswa", payload.nama_mahasiswa);
-  formData.append("nim", payload.nim);
+  if (payload.id_user) {
+    formData.append("id_user", payload.id_user);
+  }
+  formData.append("judul_kegiatan", payload.judul_kegiatan);
   formData.append("jenis_aktivitas", payload.jenis_aktivitas);
   formData.append("deskripsi", payload.deskripsi);
   formData.append("tanggal", payload.tanggal);
@@ -48,5 +50,10 @@ export async function updateActivity(id: string, payload: ActivityFormValues) {
 
 export async function removeActivity(id: string) {
   const { data } = await http.delete<{ id: string }>(`/api/activities/${id}`);
+  return data;
+}
+
+export async function verifyActivity(id: string, status: ActivityStatus) {
+  const { data } = await http.patch<Activity>(`/api/activities/${id}/verify`, { status });
   return data;
 }

@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 
 import { env } from "../config/env.js";
+import { findAccountByCredentials } from "../services/sheetsService.js";
 import { HttpError } from "../utils/httpError.js";
 
 const loginSchema = z.object({
@@ -11,18 +12,11 @@ const loginSchema = z.object({
 
 export async function login(req, res) {
   const credentials = loginSchema.parse(req.body);
+  const user = await findAccountByCredentials(credentials.username, credentials.password);
 
-  if (
-    credentials.username !== env.loginUsername ||
-    credentials.password !== env.loginPassword
-  ) {
+  if (!user) {
     throw new HttpError(401, "Username atau password tidak valid.");
   }
-
-  const user = {
-    username: env.loginUsername,
-    name: "Admin Akademik",
-  };
 
   const token = jwt.sign(user, env.jwtSecret, { expiresIn: "1d" });
 

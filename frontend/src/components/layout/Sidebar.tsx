@@ -1,4 +1,4 @@
-import { BarChart3, ClipboardList, LogOut, MoonStar, School, SunMedium } from "lucide-react";
+import { BarChart3, ClipboardList, LogOut, MoonStar, School, SunMedium, UsersRound } from "lucide-react";
 import { NavLink } from "react-router-dom";
 
 import { useAuth } from "../../hooks/useAuth";
@@ -8,10 +8,11 @@ import { cn } from "../../utils/format";
 const links = [
   { to: "/", label: "Dashboard", icon: BarChart3 },
   { to: "/aktivitas", label: "Aktivitas", icon: ClipboardList },
+  { to: "/users", label: "User", icon: UsersRound, adminOnly: true },
 ];
 
 export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => void }) {
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   return (
@@ -33,7 +34,7 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
           </div>
         </div>
         <nav className="space-y-2">
-          {links.map((link) => {
+          {links.filter((link) => !link.adminOnly || user?.role === "admin").map((link) => {
             const Icon = link.icon;
             return (
               <NavLink

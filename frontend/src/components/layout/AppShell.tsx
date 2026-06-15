@@ -5,7 +5,7 @@ import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
 const titles: Record<string, string> = {
-  "/": "Dashboard Modern",
+  "/": "Portal Akademik",
   "/aktivitas": "Data Aktivitas Mahasiswa",
 };
 

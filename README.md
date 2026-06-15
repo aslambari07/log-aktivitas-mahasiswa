@@ -26,13 +26,16 @@ Project ini dibuat untuk membantu proses pencatatan aktivitas mahasiswa agar:
 - Dashboard ringkasan aktivitas mahasiswa
 - Statistik utama aktivitas
 - CRUD log aktivitas
+- Entitas admin terpisah di `tb_admin`
+- CRUD user mahasiswa di `tb_user`
+- Verifikasi aktivitas oleh admin
 - Pencarian data secara realtime
 - Filter tanggal dan status
 - Pagination data
 - Detail aktivitas mahasiswa
 - Form input aktivitas dengan validasi
 - Upload bukti file
-- Login sederhana berbasis JWT
+- Login admin/user berbasis JWT
 - Tampilan responsif
 - Empty state, loading state, dan error handling
 
@@ -56,11 +59,11 @@ backend/src/middleware/
 
 ## Alur Sistem
 
-1. Mahasiswa login ke aplikasi.
-2. Mahasiswa mengisi data aktivitas harian.
-3. Data dikirim ke backend.
-4. Backend menyimpan dan membaca data dari Google Sheets.
-5. Data ditampilkan kembali dalam dashboard, tabel, dan detail aktivitas.
+1. Admin login dari sheet `tb_admin`.
+2. Admin membuat akun mahasiswa di sheet `tb_user`.
+3. Mahasiswa login dan mengisi log aktivitas.
+4. Backend menyimpan log ke sheet `log_aktivitas` dengan relasi `id_user`.
+5. Admin memantau semua log dan memverifikasi status aktivitas.
 
 ## Menjalankan Project Secara Lokal
 
@@ -87,10 +90,14 @@ Default local URL:
 - Frontend: `http://localhost:5173`
 - Backend: `http://localhost:5051`
 
-## Login Default
+## Akun Login
 
-- Username: `admin`
-- Password: `admin123`
+Login dibaca dari Google Sheets:
+
+- Admin: sheet `tb_admin`
+- User mahasiswa: sheet `tb_user`
+
+Pastikan minimal ada satu baris admin di `tb_admin` sebelum login pertama.
 
 ## Konfigurasi Data
 
@@ -105,7 +112,6 @@ Environment yang dipakai:
 ```env
 GOOGLE_APPS_SCRIPT_URL=https://script.google.com/macros/s/DEPLOYMENT_ID/exec
 GOOGLE_SHEETS_SPREADSHEET_NAME=Tb_log_aktivitas
-GOOGLE_SHEETS_SHEET_NAME=log_aktivitas
 ```
 
 Script yang dipakai tersedia di:
@@ -120,7 +126,6 @@ Environment yang dipakai:
 
 ```env
 GOOGLE_SHEETS_SPREADSHEET_NAME=Tb_log_aktivitas
-GOOGLE_SHEETS_SHEET_NAME=log_aktivitas
 GOOGLE_SHEETS_SPREADSHEET_ID=SPREADSHEET_ID_ANDA
 GOOGLE_SERVICE_ACCOUNT_EMAIL=SERVICE_ACCOUNT_EMAIL
 GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nISI_PRIVATE_KEY\n-----END PRIVATE KEY-----\n"
@@ -128,26 +133,26 @@ GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nISI_PRIVATE_KEY\n-----END PRIVA
 
 ## Struktur Kolom Sheet
 
-Header yang digunakan:
+Project memakai 3 sheet:
 
 ```text
-id
-nama_mahasiswa
-nim
-jenis_aktivitas
-deskripsi
-tanggal
-status
-bukti_file
-created_at
+tb_admin
+id_admin | nama_admin | email | username | password | created_at
+
+tb_user
+id_user | id_admin | nim | nama_lengkap | email | username | password | prodi | created_at
+
+log_aktivitas
+id_log | id_user | judul_kegiatan | jenis_aktivitas | deskripsi | tanggal | status | bukti_file | created_at
 ```
 
-Jika header belum ada, backend akan menambahkannya otomatis pada sheet `log_aktivitas`.
+Jika sheet/header belum ada, backend atau Apps Script akan menambahkannya otomatis.
 
 ## Catatan Implementasi
 
 - Upload file disimpan ke folder `uploads/`
-- Path file bukti ikut disimpan ke Google Sheets
+- Path file bukti disimpan langsung di kolom `bukti_file` pada `log_aktivitas`
+- Status aktivitas memakai nilai `pending`, `approved`, atau `rejected`
 - Statistik, filter, dan pencarian dihitung dari data sheet
 - Jika konfigurasi Google belum lengkap, endpoint aktivitas akan menampilkan pesan error yang sesuai
 - Sistem ini cocok sebagai fondasi awal dan masih bisa dikembangkan ke database penuh di tahap berikutnya
