@@ -16,6 +16,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .then(setUser)
       .catch(() => {
         localStorage.removeItem("academic-log-token");
+        setUser(null);
       })
       .finally(() => setIsReady(true));
   }, []);

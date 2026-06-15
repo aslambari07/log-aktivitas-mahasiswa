@@ -9,48 +9,12 @@ import { errorHandler, notFound } from "./middleware/errorHandler.js";
 
 export const app = express();
 
-function normalizeOrigin(value) {
-  const trimmed = value.trim();
-
-  if (!trimmed) {
-    return "";
-  }
-
-  try {
-    return new URL(trimmed).origin;
-  } catch {
-    return trimmed;
-  }
-}
-
-const allowedOrigins = env.frontendUrl
-  .split(",")
-  .map(normalizeOrigin)
-  .filter(Boolean);
-
-function isLocalhostOrigin(origin) {
-  try {
-    const { hostname } = new URL(origin);
-    return ["localhost", "127.0.0.1", "::1"].includes(hostname);
-  } catch {
-    return false;
-  }
-}
-
 app.use(
   cors({
-    origin(origin, callback) {
-      if (
-        !origin ||
-        allowedOrigins.length === 0 ||
-        allowedOrigins.includes(origin) ||
-        isLocalhostOrigin(origin)
-      ) {
-        return callback(null, true);
-      }
-
-      return callback(new Error(`Origin ${origin} tidak diizinkan oleh konfigurasi CORS.`));
-    },
+    origin: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    optionsSuccessStatus: 204,
   })
 );
 app.use(express.json());

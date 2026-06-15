@@ -3,12 +3,21 @@ import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
 import { HttpError } from "../utils/httpError.js";
 
+export const publicAdminUser = {
+  id_admin: "public-admin",
+  username: "public",
+  name: "Publik Admin",
+  nama_admin: "Publik Admin",
+  role: "admin",
+};
+
 export function requireAuth(req, _res, next) {
   const authorization = req.headers.authorization;
   const token = authorization?.startsWith("Bearer ") ? authorization.slice(7) : null;
 
   if (!token) {
-    return next(new HttpError(401, "Token autentikasi tidak ditemukan."));
+    req.user = publicAdminUser;
+    return next();
   }
 
   try {

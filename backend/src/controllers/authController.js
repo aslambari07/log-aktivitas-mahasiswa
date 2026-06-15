@@ -2,6 +2,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 
 import { env } from "../config/env.js";
+import { publicAdminUser } from "../middleware/auth.js";
 import { findAccountByCredentials } from "../services/sheetsService.js";
 import { HttpError } from "../utils/httpError.js";
 
@@ -28,6 +29,6 @@ export async function login(req, res) {
 
 export async function me(req, res) {
   res.json({
-    user: req.user,
+    user: req.user || publicAdminUser,
   });
 }
